@@ -170,20 +170,25 @@ typedef struct wmask
 } wmask;
 
 static wmask masks[] =
-{ { IN_ACCESS,	      "+", "access" },
-  { IN_ATTRIB,	      "*", "attrib" },
-  { IN_CLOSE_WRITE,   "+", "close_write" },
-  { IN_CLOSE_NOWRITE, "*", "close_nowrite" },
-  { IN_CREATE,	      "+", "create" },
-  { IN_DELETE,	      "+", "delete" },
-  { IN_DELETE_SELF,   "",  "delete_self" },
-  { IN_MODIFY,	      "+", "modify" },
-  { IN_MOVE_SELF,     "",  "move_self" },
-  { IN_MOVED_FROM,    "+", "moved_from" },
-  { IN_MOVED_TO,      "+", "moved_to" },
-  { IN_OPEN,	      "*", "open" },
-  { IN_ALL_EVENTS,    "",  "all" },
-  { 0,		      NULL,NULL },
+{ { IN_ACCESS,	      "+",  "access" },
+  { IN_ATTRIB,	      "*",  "attrib" },
+  { IN_CLOSE_WRITE,   "+",  "close_write" },
+  { IN_CLOSE_NOWRITE, "*",  "close_nowrite" },
+  { IN_CREATE,	      "+",  "create" },
+  { IN_DELETE,	      "+",  "delete" },
+  { IN_DELETE_SELF,   "",   "delete_self" },
+  { IN_MODIFY,	      "+",  "modify" },
+  { IN_MOVE_SELF,     "",   "move_self" },
+  { IN_MOVED_FROM,    "+",  "moved_from" },
+  { IN_MOVED_TO,      "+",  "moved_to" },
+  { IN_OPEN,	      "*",  "open" },
+  { IN_ALL_EVENTS,    NULL, "all" },
+  { IN_DONT_FOLLOW,   NULL, "dont_follow" },
+  { IN_EXCL_UNLINK,   NULL, "excl_unlink" },
+  { IN_MASK_ADD,      NULL, "mask_add" },
+  { IN_ONESHOT,       NULL, "oneshot" },
+  { IN_ONLYDIR,       NULL, "onlydir" },
+  { 0,		      NULL, NULL },
 };
 
 
@@ -194,7 +199,7 @@ static wmask masks[] =
 static atom_t ATOM_directory;
 
 static functor_t FUNCTOR_member1;
-static functor_t FUNCTOR_inotify4;
+static functor_t FUNCTOR_inotify5;
 static functor_t FUNCTOR_error2;
 static functor_t FUNCTOR_inotify_error2;
 
@@ -281,8 +286,8 @@ in_mask_name(uint32_t mask)
 { wmask *wm;
   static atom_t ATOM_null = 0;
 
-  for(wm=masks; wm->name; wm++)
-  { if ( wm->mask != IN_ALL_EVENTS && (wm->mask & mask) )
+  for(wm=masks; wm->flags; wm++)
+  { if ( (wm->mask & mask) )
     { if ( !wm->atom )
 	wm->atom = PL_new_atom(wm->name);
       return wm->atom;
@@ -348,21 +353,61 @@ pl_inotify_rm_watch(term_t inotity, term_t watch)
   return FALSE;
 }
 
+typedef struct inflag
+{ uint32_t    mask;
+  const char *name;
+  atom_t      atom;
+} inflag;
+
+static inflag inflags[] =
+{ { IN_IGNORED,    "ignored" },
+  { IN_ISDIR,      "isdir" },
+  { IN_Q_OVERFLOW, "q_overflow" },
+  { IN_UNMOUNT,    "unmount" },
+  { 0,		   NULL }
+};
+
+static term_t
+put_flags(uint32_t mask)
+{ inflag *ifg;
+  term_t t, h;
+
+  if ( !(t = PL_new_term_ref()) ||
+       !(h = PL_new_term_ref()) ||
+       !PL_put_nil(t) )
+    return 0;
+
+  for(ifg=inflags; ifg->name; ifg++)
+  { if ( (mask & ifg->mask) )
+    { if ( !ifg->atom )
+	ifg->atom = PL_new_atom(ifg->name);
+      if ( !PL_put_atom(h, ifg->atom) ||
+	   !PL_cons_list(t, h, t) )
+	return 0;
+    }
+  }
+
+  return t;
+}
+
 
 static int
 put_in_event(term_t t, const struct inotify_event *ev)
 { atom_t mask = in_mask_name(ev->mask);
   term_t name;
+  term_t flags;
 
-  return ( (name = PL_new_term_ref()) &&
+  return ( (flags = put_flags(ev->mask)) &&
+           (name = PL_new_term_ref()) &&
 	   (ev->len ? PL_unify_term(name, PL_FUNCTOR, FUNCTOR_member1,
 					    PL_MBCHARS, ev->name)
 		    : PL_unify_atom(name, ATOM_directory)) &&
-	   PL_unify_term(t, PL_FUNCTOR, FUNCTOR_inotify4,
+	   PL_unify_term(t, PL_FUNCTOR, FUNCTOR_inotify5,
 		              PL_INT, ev->wd,
 		              PL_ATOM, mask,
 		              PL_INT64, (int64_t) ev->cookie,
-		              PL_TERM, name)
+		              PL_TERM, name,
+			      PL_TERM, flags)
 	 );
 }
 
@@ -404,7 +449,7 @@ install_inotify4pl(void)
 { ATOM_directory = PL_new_atom("directory");
 
   FUNCTOR_member1        = PL_new_functor(PL_new_atom("member"),        1);
-  FUNCTOR_inotify4       = PL_new_functor(PL_new_atom("inotify"),       4);
+  FUNCTOR_inotify5       = PL_new_functor(PL_new_atom("inotify"),       5);
   FUNCTOR_error2         = PL_new_functor(PL_new_atom("error"),         2);
   FUNCTOR_inotify_error2 = PL_new_functor(PL_new_atom("inotify_error"), 2);
 
