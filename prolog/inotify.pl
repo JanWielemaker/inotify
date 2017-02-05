@@ -41,7 +41,7 @@
             inotify_current_watch/2        % ?INotify, ?Watch
           ]).
 
-:- use_foreign_library(inotify4pl).
+:- use_foreign_library(foreign(inotify4pl)).
 
 /** <module> Monitor file system changes
 

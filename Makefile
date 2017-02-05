@@ -1,4 +1,4 @@
-SOBJ=   $(PACKSODIR)/geoip4pl.$(SOEXT)
+SOBJ=   $(PACKSODIR)/inotify4pl.$(SOEXT)
 
 all:    $(SOBJ)
 
