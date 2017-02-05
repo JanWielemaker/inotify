@@ -37,19 +37,54 @@
             inotify_close/1,               % +INotify
             inotify_add_watch/4,           % +INotify, +Path, -Watch, +Options
             inotify_rm_watch/2,            % +INotify, +Watch
-            inotify_event/3                % +INotify, -Event, +Options
+            inotify_read_event/3           % +INotify, -Event, +Options
           ]).
 :- use_foreign_library(inotify4pl).
 
 /** <module> Monitor file system changes
+
+This library provides an  interface  to   the  Linux  _inotify_ API that
+generates events for changes to the file system.
 */
 
 %!  inotify_init(-INotify, +Options) is det.
+%
+%   Create an INotify object.  Options is currently ignored.
 
 %!  inotify_close(+INotify) is det.
+%
+%   Close an INotify object.
 
 %!  inotify_add_watch(+INotify, +Path, -Watch, +Options) is det.
+%
+%   Add a _watch_ to  an  INotify  object.   Path  is  either  a file or
+%   directory. Options is a list of atoms  that create the watch _mask_.
+%   These options are documented with inotify(7).  The Prolog version is
+%   derived from the C macro name (e.g., IN_CLOSE_WRITE) by dropping IN_
+%   and turning the remainder to lower case (e.g., close_write).
 
 %!  inotify_rm_watch(+INotify, +Watch) is det.
+%
+%   Remove the indicated watch.
 
-%!  inotify_event(+INotify, -Event, +Options) is det.
+%!  inotify_read_event(+INotify, -Event, +Options) is semidet.
+%
+%   Read and event from an INotify object.  Event is a term
+%
+%     - inotify(Watch, Event, Cookie, Object, Flags)
+%       Where
+%       - Watch is the (integer) watch reference
+%       - Event is the event name
+%       - Cookie is the associated cookie (for renaming)
+%       - Object is one of `member(File)`, `directory` or `file`
+%       - Flags is a list of one or more of the atoms `ignored`,
+%         `q_overflow` or `unmount`.  Note that the `isdir` flag
+%         defines the value for Object.
+%
+%   Options defined are:
+%
+%     - timeout(+Seconds)
+%     If there is no event within Seconds, the predicate fails.
+%     Handled through the poll() API, which implies a 1 millisecond
+%     granularity and a max time of (2^31)/1000 seconds.
+

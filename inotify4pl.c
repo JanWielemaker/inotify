@@ -32,9 +32,11 @@
     POSSIBILITY OF SUCH DAMAGE.
 */
 
+#define PL_ARITY_AS_SIZE
 #include <SWI-Stream.h>
 #include <SWI-Prolog.h>
 #include <sys/inotify.h>
+#include <poll.h>
 #include <string.h>
 #include <errno.h>
 #include <assert.h>
@@ -197,6 +199,8 @@ static wmask masks[] =
 		 *******************************/
 
 static atom_t ATOM_directory;
+static atom_t ATOM_file;
+static atom_t ATOM_timeout;
 
 static functor_t FUNCTOR_member1;
 static functor_t FUNCTOR_inotify5;
@@ -224,7 +228,7 @@ static foreign_t
 pl_inotify_init(term_t inotify, term_t options)
 { int fd;
 
-  if ( (fd=inotify_init1(0)) >= 0 )
+  if ( (fd=inotify_init1(IN_CLOEXEC)) >= 0 )
   { inref *ref;
 
     if ( (ref=PL_malloc(sizeof(*ref))) )
@@ -361,7 +365,6 @@ typedef struct inflag
 
 static inflag inflags[] =
 { { IN_IGNORED,    "ignored" },
-  { IN_ISDIR,      "isdir" },
   { IN_Q_OVERFLOW, "q_overflow" },
   { IN_UNMOUNT,    "unmount" },
   { 0,		   NULL }
@@ -400,8 +403,9 @@ put_in_event(term_t t, const struct inotify_event *ev)
   return ( (flags = put_flags(ev->mask)) &&
            (name = PL_new_term_ref()) &&
 	   (ev->len ? PL_unify_term(name, PL_FUNCTOR, FUNCTOR_member1,
-					    PL_MBCHARS, ev->name)
-		    : PL_unify_atom(name, ATOM_directory)) &&
+					    PL_MBCHARS, ev->name) :
+	   (ev->mask & IN_ISDIR) ? PL_unify_atom(name, ATOM_directory)
+		                 : PL_unify_atom(name, ATOM_file)) &&
 	   PL_unify_term(t, PL_FUNCTOR, FUNCTOR_inotify5,
 		              PL_INT, ev->wd,
 		              PL_ATOM, mask,
@@ -416,14 +420,63 @@ put_in_event(term_t t, const struct inotify_event *ev)
 #define nextEv(ev)	 addPointer((ev), sizeof(*(ev))+(ev)->len)
 
 static foreign_t
-pl_inotify_event(term_t inotity, term_t event, term_t options)
+pl_inotify_read_event(term_t inotity, term_t event, term_t options)
 { inref *ref;
+  term_t tail = PL_copy_term_ref(options);
+  term_t head = PL_new_term_ref();
+  int has_timeout = FALSE;
+  int timeout;
+
+  while(PL_get_list(tail,head,tail))
+  { atom_t name;
+    size_t arity;
+
+    if ( PL_get_name_arity(head, &name, &arity) && arity == 1 )
+    { term_t a = PL_new_term_ref();
+
+      if ( name == ATOM_timeout )
+      { double t;
+
+	if ( PL_get_arg(1, head, a) &&
+	     PL_get_float_ex(a, &t) )
+	{ has_timeout = TRUE;
+	  timeout = (int)(t*1000.0);
+	} else
+	  return FALSE;
+      }
+    } else
+      return PL_type_error("option", head);
+  }
+  if ( !PL_get_nil_ex(tail) )
+    return FALSE;
 
   if ( get_inotify(inotity, &ref, TRUE) )
   { term_t ev = PL_new_term_ref();
 
     if ( ref->ev == NULL )
-    { ssize_t len = read(ref->fd, ref->buf, sizeof(ref->buf));
+    { ssize_t len;
+
+      if ( has_timeout )
+      { struct pollfd fds[1];
+
+	for(;;)
+	{ int rc;
+	  fds[0].fd = ref->fd;
+	  fds[0].events = POLLIN;
+
+	  rc = poll(fds, 1, timeout);
+	  if ( rc < 0 && errno == EINTR )
+	  { if ( PL_handle_signals() < 0 )
+	      return FALSE;
+	    continue;
+	  }
+	  if ( rc == 0 )
+	    return FALSE;
+	  break;
+	}
+      }
+
+      len = read(ref->fd, ref->buf, sizeof(ref->buf));
 
       if ( len < 0 )
 	return inotify_error(ref);
@@ -446,16 +499,18 @@ pl_inotify_event(term_t inotity, term_t event, term_t options)
 
 install_t
 install_inotify4pl(void)
-{ ATOM_directory = PL_new_atom("directory");
+{ ATOM_file      = PL_new_atom("file");
+  ATOM_directory = PL_new_atom("directory");
+  ATOM_timeout   = PL_new_atom("timeout");
 
   FUNCTOR_member1        = PL_new_functor(PL_new_atom("member"),        1);
   FUNCTOR_inotify5       = PL_new_functor(PL_new_atom("inotify"),       5);
   FUNCTOR_error2         = PL_new_functor(PL_new_atom("error"),         2);
   FUNCTOR_inotify_error2 = PL_new_functor(PL_new_atom("inotify_error"), 2);
 
-  PL_register_foreign("inotify_init",	   2, pl_inotify_init,	    0);
-  PL_register_foreign("inotify_close",	   1, pl_inotify_close,	    0);
-  PL_register_foreign("inotify_add_watch", 4, pl_inotify_add_watch, 0);
-  PL_register_foreign("inotify_rm_watch",  2, pl_inotify_rm_watch,  0);
-  PL_register_foreign("inotify_event",	   3, pl_inotify_event,	    0);
+  PL_register_foreign("inotify_init",	    2, pl_inotify_init,	      0);
+  PL_register_foreign("inotify_close",	    1, pl_inotify_close,      0);
+  PL_register_foreign("inotify_add_watch",  4, pl_inotify_add_watch,  0);
+  PL_register_foreign("inotify_rm_watch",   2, pl_inotify_rm_watch,   0);
+  PL_register_foreign("inotify_read_event", 3, pl_inotify_read_event, 0);
 }
