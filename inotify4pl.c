@@ -201,6 +201,7 @@ static wmask masks[] =
 static atom_t ATOM_directory;
 static atom_t ATOM_file;
 static atom_t ATOM_timeout;
+static atom_t ATOM_unknown;
 
 static functor_t FUNCTOR_member1;
 static functor_t FUNCTOR_inotify5;
@@ -399,13 +400,20 @@ put_in_event(term_t t, const struct inotify_event *ev)
 { atom_t mask = in_mask_name(ev->mask);
   term_t name;
   term_t flags;
+  atom_t type;
+
+  if ( (ev->mask & IN_ISDIR) )
+    type = ATOM_directory;
+  else if ( (ev->mask & (IN_IGNORED|IN_DELETE_SELF|IN_MOVE_SELF)) )
+    type = ATOM_unknown;
+  else
+    type = ATOM_file;
 
   return ( (flags = put_flags(ev->mask)) &&
            (name = PL_new_term_ref()) &&
 	   (ev->len ? PL_unify_term(name, PL_FUNCTOR, FUNCTOR_member1,
-					    PL_MBCHARS, ev->name) :
-	   (ev->mask & IN_ISDIR) ? PL_unify_atom(name, ATOM_directory)
-		                 : PL_unify_atom(name, ATOM_file)) &&
+					    PL_MBCHARS, ev->name)
+	            : PL_unify_atom(name, type)) &&
 	   PL_unify_term(t, PL_FUNCTOR, FUNCTOR_inotify5,
 		              PL_INT, ev->wd,
 		              PL_ATOM, mask,
@@ -502,15 +510,16 @@ install_inotify4pl(void)
 { ATOM_file      = PL_new_atom("file");
   ATOM_directory = PL_new_atom("directory");
   ATOM_timeout   = PL_new_atom("timeout");
+  ATOM_unknown   = PL_new_atom("unknown");
 
   FUNCTOR_member1        = PL_new_functor(PL_new_atom("member"),        1);
   FUNCTOR_inotify5       = PL_new_functor(PL_new_atom("inotify"),       5);
   FUNCTOR_error2         = PL_new_functor(PL_new_atom("error"),         2);
   FUNCTOR_inotify_error2 = PL_new_functor(PL_new_atom("inotify_error"), 2);
 
-  PL_register_foreign("inotify_init",	    2, pl_inotify_init,	      0);
-  PL_register_foreign("inotify_close",	    1, pl_inotify_close,      0);
-  PL_register_foreign("inotify_add_watch",  4, pl_inotify_add_watch,  0);
-  PL_register_foreign("inotify_rm_watch",   2, pl_inotify_rm_watch,   0);
-  PL_register_foreign("inotify_read_event", 3, pl_inotify_read_event, 0);
+  PL_register_foreign("inotify_init",	     2, pl_inotify_init,       0);
+  PL_register_foreign("inotify_close_",	     1, pl_inotify_close,      0);
+  PL_register_foreign("inotify_add_watch",   4, pl_inotify_add_watch,  0);
+  PL_register_foreign("inotify_rm_watch_",   2, pl_inotify_rm_watch,   0);
+  PL_register_foreign("inotify_read_event_", 3, pl_inotify_read_event, 0);
 }
