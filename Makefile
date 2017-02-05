@@ -1,10 +1,16 @@
-SO=$(shell eval `swipl --dump-runtime-variables` && echo $$PLSOEXT)
-COFLAGS=-O2 -gdwarf-2 -g3
-COFLAGS=-gdwarf-2 -g3
+SOBJ=   $(PACKSODIR)/geoip4pl.$(SOEXT)
 
-inotify4pl.$(SO): inotify4pl.c Makefile
-	swipl-ld -shared -Wall $(COFLAGS) -shared -o inotify4pl inotify4pl.c
+all:    $(SOBJ)
 
+OBJ=	c/inotify4pl.o
+
+$(SOBJ): $(OBJ)
+	mkdir -p $(PACKSODIR)
+	$(LD) $(LDSOFLAGS) -o $@ $(OBJ) $(SWISOLIB)
+
+check::
+install::
 clean:
-	rm -f *~
-	rm -f inotify4pl.$(SO)
+	rm -f $(OBJ)
+distclean: clean
+	rm -f $(SOBJ)
