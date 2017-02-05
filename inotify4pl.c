@@ -182,6 +182,7 @@ static wmask masks[] =
   { IN_MOVED_FROM,    "+", "moved_from" },
   { IN_MOVED_TO,      "+", "moved_to" },
   { IN_OPEN,	      "*", "open" },
+  { IN_ALL_EVENTS,    "",  "all" },
   { 0,		      NULL,NULL },
 };
 
@@ -190,6 +191,9 @@ static wmask masks[] =
 		 *	 PROLOG CONNECTION	*
 		 *******************************/
 
+static atom_t ATOM_directory;
+
+static functor_t FUNCTOR_member1;
 static functor_t FUNCTOR_inotify4;
 static functor_t FUNCTOR_error2;
 static functor_t FUNCTOR_inotify_error2;
@@ -205,7 +209,8 @@ inotify_error(inref *ref)
 			       PL_FUNCTOR, FUNCTOR_inotify_error2,
 			         PL_TERM, in,
 			         PL_CHARS, strerror(errno),
-			       PL_VARIABLE)
+			       PL_VARIABLE) &&
+	   PL_raise_exception(ex)
 	 );
 }
 
@@ -277,7 +282,7 @@ in_mask_name(uint32_t mask)
   static atom_t ATOM_null = 0;
 
   for(wm=masks; wm->name; wm++)
-  { if ( (wm->mask & mask) )
+  { if ( wm->mask != IN_ALL_EVENTS && (wm->mask & mask) )
     { if ( !wm->atom )
 	wm->atom = PL_new_atom(wm->name);
       return wm->atom;
@@ -297,20 +302,18 @@ pl_inotify_add_watch(term_t inotity, term_t path, term_t watch, term_t events)
 { inref *ref;
   char *fname;
 
-  if ( get_inotify(inotity, &ref, TRUE) ||
+  if ( get_inotify(inotity, &ref, TRUE) &&
        PL_get_file_name(path, &fname,
-			PL_FILE_OSPATH|PL_FILE_SEARCH|PL_FILE_EXIST) )
+			PL_FILE_OSPATH) )
   { int rc;
     uint32_t mask = 0;
     term_t tail = PL_copy_term_ref(events);
     term_t head = PL_new_term_ref();
 
     while(PL_get_list(tail, head, tail))
-    { atom_t a;
-      uint32_t m;
+    { uint32_t m;
 
-      if ( PL_get_atom_ex(head, &a) &&
-	   get_mask(a, &m) )
+      if ( get_mask(head, &m) )
 	mask |= m;
       else
 	return FALSE;
@@ -318,7 +321,7 @@ pl_inotify_add_watch(term_t inotity, term_t path, term_t watch, term_t events)
     if ( !PL_get_nil_ex(tail) )
       return FALSE;
 
-    if ( (rc=inotify_add_watch(ref->fd, fname, mask)) > 0 )
+    if ( (rc=inotify_add_watch(ref->fd, fname, mask)) >= 0 )
     { return PL_unify_integer(watch, rc);
     }
 
@@ -349,12 +352,18 @@ pl_inotify_rm_watch(term_t inotity, term_t watch)
 static int
 put_in_event(term_t t, const struct inotify_event *ev)
 { atom_t mask = in_mask_name(ev->mask);
+  term_t name;
 
-  return PL_unify_term(t, PL_FUNCTOR, FUNCTOR_inotify4,
-		            PL_INT, ev->wd,
-		            PL_ATOM, mask,
-		            PL_INT64, (int64_t) ev->cookie,
-		            PL_MBCHARS, ev->name);
+  return ( (name = PL_new_term_ref()) &&
+	   (ev->len ? PL_unify_term(name, PL_FUNCTOR, FUNCTOR_member1,
+					    PL_MBCHARS, ev->name)
+		    : PL_unify_atom(name, ATOM_directory)) &&
+	   PL_unify_term(t, PL_FUNCTOR, FUNCTOR_inotify4,
+		              PL_INT, ev->wd,
+		              PL_ATOM, mask,
+		              PL_INT64, (int64_t) ev->cookie,
+		              PL_TERM, name)
+	 );
 }
 
 
@@ -392,7 +401,10 @@ pl_inotify_event(term_t inotity, term_t event, term_t options)
 
 install_t
 install_inotify4pl(void)
-{ FUNCTOR_inotify4       = PL_new_functor(PL_new_atom("inotify"),       4);
+{ ATOM_directory = PL_new_atom("directory");
+
+  FUNCTOR_member1        = PL_new_functor(PL_new_atom("member"),        1);
+  FUNCTOR_inotify4       = PL_new_functor(PL_new_atom("inotify"),       4);
   FUNCTOR_error2         = PL_new_functor(PL_new_atom("error"),         2);
   FUNCTOR_inotify_error2 = PL_new_functor(PL_new_atom("inotify_error"), 2);
 

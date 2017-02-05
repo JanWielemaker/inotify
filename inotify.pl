@@ -33,7 +33,11 @@
 */
 
 :- module(inotify,
-          [
+          [ inotify_init/2,                % -INotify, +Options
+            inotify_close/1,               % +INotify
+            inotify_add_watch/4,           % +INotify, +Path, -Watch, +Options
+            inotify_rm_watch/2,            % +INotify, +Watch
+            inotify_event/3                % +INotify, -Event, +Options
           ]).
 :- use_foreign_library(inotify4pl).
 
