@@ -501,7 +501,7 @@ pl_inotify_read_event(term_t inotity, term_t event, term_t options)
 
       ref->len = len;
       ref->ev = (struct inotify_event*)ref->buf;
-      assert((char*)ref->ev < &ref->buf[ref->len]);
+      assert((char*)nextEv(ref->ev) <= &ref->buf[ref->len]);
     }
 
     if ( put_in_event(ev, ref->ev) )
