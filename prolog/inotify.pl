@@ -70,8 +70,13 @@ inotify_close(INotify) :-
 
 %!  inotify_add_watch(+INotify, +Path, +Options) is det.
 %
-%   Add a watch for Path. This high  level interface maintains the known
-%   watches.
+%   Add a watch for Path. Path is refers   to either a file or directory
+%   and may be a term suitable   for  absolute_file_name/3. Options is a
+%   list of atoms that  create  the   watch  _mask_.  These  options are
+%   documented with inotify(7). The Prolog version is derived from the C
+%   macro name (e.g., IN_CLOSE_WRITE) by dropping   IN_  and turning the
+%   remainder to lower case (e.g.,   `close_write`). Using `all` watches
+%   for all events.
 
 inotify_add_watch(INotify, Spec, Options) :-
     spec_path(Spec, Path, Type),
@@ -97,7 +102,8 @@ spec_path(Spec, Path, file) :-
 %!  inotify_rm_watch(+INotify, +Watch) is semidet.
 %
 %   Remove the indicated watch. Watch is either the integer watch id, an
-%   absolute path or a path specification used for inotify_add_watch/3.
+%   absolute path or a path  specification used for inotify_add_watch/3.
+%   @see inotify_current_watch/2.
 
 inotify_rm_watch(INotify, Watch) :-
     integer(Watch), !,
@@ -166,9 +172,11 @@ inotify_current_watch(INotify, Path) :-
 %     - modify
 %     File was modified (e.g., write(2), truncate(2)).
 %     - move_self
-%     Watched file/directory was itself moved.  The admin for
-%     inotify_current_watch/2 is updated to reflect the newly watched
-%     object.
+%     Watched file/directory was itself moved.  Unfortunately the
+%     interface doesn't tell us where the directory or file moved
+%     to.  As a result, inotify_current_watch/2 indicates the old
+%     location and all reported events keep indicating the old
+%     location.
 %     - moved_from
 %     Generated for the directory containing the old filename when
 %     a file is renamed.
