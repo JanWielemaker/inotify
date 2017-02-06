@@ -1,5 +1,5 @@
 name(inotify).
-version('0.9.0').
+version('0.9.1').
 title('Access Linux inotify API to watch file system changes').
 keywords([inotify, file, change]).
 author( 'Jan Wielemaker', 'jan@swi-prolog.org' ).
