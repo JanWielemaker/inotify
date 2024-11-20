@@ -3,7 +3,8 @@
     Author:        Jan Wielemaker
     E-mail:        J.Wielemaker@vu.nl
     WWW:           http://www.swi-prolog.org
-    Copyright (c)  2017, VU University Amsterdam
+    Copyright (c)  2017-2024, VU University Amsterdam
+			      SWI-Prolog Solutions b.v.
     All rights reserved.
 
     Redistribution and use in source and binary forms, with or without
@@ -217,8 +218,8 @@ inotify_error(inref *ref)
 	   unify_inotify(in, ref) &&
 	   PL_unify_term(ex, PL_FUNCTOR, FUNCTOR_error2,
 			       PL_FUNCTOR, FUNCTOR_inotify_error2,
-			         PL_TERM, in,
-			         PL_CHARS, strerror(errno),
+				 PL_TERM, in,
+				 PL_CHARS, strerror(errno),
 			       PL_VARIABLE) &&
 	   PL_raise_exception(ex)
 	 );
@@ -243,7 +244,7 @@ pl_inotify_init(term_t inotify, term_t options)
       return FALSE;
     }
     close(fd);
-    return PL_resource_error("memmory");
+    return PL_resource_error("memory");
   }
 
   return inotify_error(NULL);
@@ -413,12 +414,12 @@ put_in_event(term_t t, const struct inotify_event *ev)
            (name = PL_new_term_ref()) &&
 	   (ev->len ? PL_unify_term(name, PL_FUNCTOR, FUNCTOR_member1,
 					    PL_MBCHARS, ev->name)
-	            : PL_unify_atom(name, type)) &&
+		    : PL_unify_atom(name, type)) &&
 	   PL_unify_term(t, PL_FUNCTOR, FUNCTOR_inotify5,
-		              PL_INT, ev->wd,
-		              PL_ATOM, mask,
-		              PL_INT64, (int64_t) ev->cookie,
-		              PL_TERM, name,
+			      PL_INT, ev->wd,
+			      PL_ATOM, mask,
+			      PL_INT64, (int64_t) ev->cookie,
+			      PL_TERM, name,
 			      PL_TERM, flags)
 	 );
 }
@@ -484,10 +485,20 @@ pl_inotify_read_event(term_t inotity, term_t event, term_t options)
 	}
       }
 
-      len = read(ref->fd, ref->buf, sizeof(ref->buf));
+      for(;;)
+      { len = read(ref->fd, ref->buf, sizeof(ref->buf));
+	if ( len < 0 )
+	{ if ( errno == EINTR )
+	  { if ( PL_handle_signals() < 0 )
+	      return FALSE;
+	    continue;
+	  }
+	  return inotify_error(ref);
+	} else
+	{ break;
+	}
+      }
 
-      if ( len < 0 )
-	return inotify_error(ref);
       ref->len = len;
       ref->ev = (struct inotify_event*)ref->buf;
       assert((char*)ref->ev < &ref->buf[ref->len]);
