@@ -1,4 +1,4 @@
-:- use_module(inotify).
+:- use_module(library(inotify)).
 
 print_events(Dir) :-
     inotify_init(IN, []),
