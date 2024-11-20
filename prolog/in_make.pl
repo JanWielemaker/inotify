@@ -43,17 +43,25 @@
 /** <module> Automatically reload sources
 */
 
+:- dynamic
+    in/1.
+
 %!  in_make is det.
 %
 %   Setup monitoring all source file and run make/0 if any of them
 %   changes.
 
 in_make :-
+    in(_),
+    !,
+    print_message(warning, in_make(running)).
+in_make :-
     in_monitor(IN),
     thread_create(in_make_loop(IN), _, [alias(in_make)]).
 
 in_monitor(IN) :-
     inotify_init(IN, []),
+    asserta(in(IN)),
     forall(distinct(source_dir(Dir)),
            inotify_add_watch(IN, Dir, [close_write])).
 
@@ -67,8 +75,7 @@ in_make_loop(IN) :-
         ->  debug(in_make(event), 'Ev: ~p', [Ev]),
             handle(Ev),
             fail
-        ;   debug(in_make, 'Timeout~n', []),
-            !
+        ;   debug(in_make, 'Timeout~n', [])
         ).
 
 handle(close_write(file(File))) =>
@@ -76,3 +83,29 @@ handle(close_write(file(File))) =>
     make.
 handle(Ev) =>
     debug(in_make(ignored), 'Ignored: ~p', [Ev]).
+
+:- multifile user:message_hook/3.
+
+user:message_hook(load_file(done(_Level,
+                                 file(_File, Absolute),
+                                 _Action,
+                                 _LM,
+                                 _TimeUsed,
+                                 _ClausesCreated)),
+                  _Kind, _Lines) :-
+    in(IN),
+    file_directory_name(Absolute, Dir),
+    (   inotify_current_watch(IN, Dir)
+    ->  true
+    ;   inotify_add_watch(IN, Dir, [close_write])
+    ),
+    fail.
+
+		 /*******************************
+		 *           MESSAGES		*
+		 *******************************/
+
+:- multifile prolog:message//1.
+
+prolog:message(in_make(running)) -->
+    [ 'in_make/0: already running'-[] ].
