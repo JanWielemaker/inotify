@@ -33,7 +33,8 @@
 */
 
 :- module(in_make,
-          [ in_make/0
+          [ in_make/0,
+            in_nomake/0
           ]).
 :- use_module(library(inotify)).
 :- use_module(library(debug)).
@@ -41,6 +42,22 @@
 :- use_module(library(solution_sequences)).
 
 /** <module> Automatically reload sources
+
+This library simplifies the development cycle  by reloading source files
+immediately when they are saved, regardless   of  the process that saved
+the file (i.e., this may be an  external   editor).  To  use it, add the
+following to the load file of your project or your `init.pl` file.
+
+```
+:- if(exists_source(library(in_make))).
+:- use_module(library(in_make)).
+:- initialization(in_make).
+:- endif.
+```
+
+Note that the files are reloaded by   the `in_make` thread. If reloading
+affects thread-local properties these may not be visible in all threads.
+Examples are global variables, thread_local predicates and Prolog flags.
 */
 
 :- dynamic
@@ -48,8 +65,11 @@
 
 %!  in_make is det.
 %
-%   Setup monitoring all source file and run make/0 if any of them
-%   changes.
+%   Setup monitoring all non-system loaded Prolog   source files and run
+%   make/0 if any of them changes. If  a   file  from a new directory is
+%   loaded, this directory is added to the set of monitored directories.
+%
+%   @see in_nomake/0 for stopping the service
 
 in_make :-
     in(_),
@@ -63,7 +83,14 @@ in_monitor(IN) :-
     inotify_init(IN, []),
     asserta(in(IN)),
     forall(distinct(source_dir(Dir)),
-           inotify_add_watch(IN, Dir, [close_write])).
+           watch_prolog_dir(IN, Dir)).
+
+watch_prolog_dir(_IN, Dir) :-
+    current_prolog_flag(home, Home),
+    sub_atom(Dir, 0, _, _, Home),
+    !.
+watch_prolog_dir(IN, Dir) :-
+    inotify_add_watch(IN, Dir, [close_write]).
 
 source_dir(Dir) :-
     source_file(File),
@@ -84,6 +111,18 @@ handle(close_write(file(File))) =>
 handle(Ev) =>
     debug(in_make(ignored), 'Ignored: ~p', [Ev]).
 
+%!  in_nomake
+%
+%   Disable automatic reloading of modified source files.
+
+in_nomake :-
+    (   catch(thread_signal(in_make, abort), _, fail)
+    ->  thread_join(in_make, _)
+    ;   true
+    ),
+    retract(in(IN)),
+    inotify_close(IN).
+
 :- multifile user:message_hook/3.
 
 user:message_hook(load_file(done(_Level,
@@ -97,7 +136,7 @@ user:message_hook(load_file(done(_Level,
     file_directory_name(Absolute, Dir),
     (   inotify_current_watch(IN, Dir)
     ->  true
-    ;   inotify_add_watch(IN, Dir, [close_write])
+    ;   watch_prolog_dir(IN, Dir)
     ),
     fail.
 
